@@ -140,9 +140,10 @@ sequenceDiagram
     
     API-->>UI: Evento SSE [3/5]: "LangGraph redactando contenido contextualizado..."
     API->>Graph: Inicia StateGraph con parámetros del usuario
-    Graph->>Vector: Consulta k=5 fragmentos semánticos más relevantes
+    Graph->>Graph: Query Builder traduce el 'Formato' a búsqueda semántica (F1)
+    Graph->>Vector: Consulta k=5 fragmentos usando la Query Pedagógica
     Vector-->>Graph: Chunks con evidencia
-    Graph->>LLM: Invocación con Few-Shot + Role Prompting
+    Graph->>LLM: Invocación con Few-Shot + Role Prompting (Nicho inyectado)
     LLM-->>Graph: Borrador pedagógico preliminar
     
     API-->>UI: Evento SSE [4/5]: "Agente Crítico: Auditando anclaje fáctico..."
@@ -150,6 +151,9 @@ sequenceDiagram
     alt Score < 0.85 e iteraciones < 2
         Graph->>LLM: Auto-corrección: reescribir afirmaciones no sustentadas
         LLM-->>Graph: Borrador corregido
+    else Score < 0.85 e iteraciones == 2
+        Graph-->>API: Error 422 (Contexto Insuficiente / Falla de Grounding)
+        API-->>UI: Cierra conexión con HTTP 422
     end
     Graph-->>API: JSON estructurado validado con Pydantic V2
     
@@ -204,13 +208,19 @@ stateDiagram-v2
 
     state QualityCriticState <<choice>>
     QualityCriticState --> SelfCorrectionLoop: Score < 0.85 Y reintentos < 2
-    QualityCriticState --> OutputFormattingState: Score >= 0.85 O reintentos == 2
+    QualityCriticState --> OutputFormattingState: Score >= 0.85
+    QualityCriticState --> Error422State: Score < 0.85 Y reintentos == 2
 
     SelfCorrectionLoop --> DraftingState: Reporte de discrepancias fácticas
     note right of SelfCorrectionLoop
         Incrementa contador iteraciones (+1).
         Instruye al redactor a purgar
         afirmaciones no documentadas.
+    end note
+
+    note left of Error422State
+        Contexto Insuficiente.
+        Fallo de Grounding.
     end note
 
     OutputFormattingState --> OCIPersistenceState: Diccionario Validado
@@ -220,6 +230,7 @@ stateDiagram-v2
     end note
 
     OCIPersistenceState --> [*]: Paquete Educativo Listo
+    Error422State --> [*]: Rechazo (HTTP 422)
 ```
 
 ---
