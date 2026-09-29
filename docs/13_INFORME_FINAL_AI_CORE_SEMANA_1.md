@@ -1,5 +1,5 @@
 # 🧠 INFORME FINAL Y DOCUMENTACIÓN: NÚCLEO DE INTELIGENCIA ARTIFICIAL
-**Versión:** 2.1 (Cierre de Semana 1 / Inicio de Pruebas E2E)
+**Versión:** 2.2 (Actualización de Arquitectura y Siguientes Integraciones)
 **Componente:** `nuevamente-ai-core`
 **Responsable:** Squad IA & Datos
 
@@ -34,30 +34,28 @@ stateDiagram-v2
     }
     
     LangGraph_Orchestrator --> Error_422 : Fallo Permanente (Max Intentos)
-    LangGraph_Orchestrator --> Auditor_Hermes : Aprobado por Crítico
+    LangGraph_Orchestrator --> Pydantic_Validator : Aprobado por Crítico
     
-    Auditor_Hermes : Escaneo de Vulnerabilidades (SAST Local)
-    Auditor_Hermes --> Pydantic_Validator : JSON Tipado
-    
+    Pydantic_Validator : JSON Tipado (Filtros XSS & Prompt Injection)
     Pydantic_Validator --> [*] : Respuesta Backend
     Error_422 --> [*] : Contexto Insuficiente
 ```
 
-### Los 4 Agentes del Grafo:
-1. **Extractor (RAG / Segmentador):** Procesa archivos locales (.pdf, .txt, .md) mediante PyMuPDF. Segmenta en fragmentos jerárquicos (chunk: 800, overlap: 150) indexados en ChromaDB de forma asíncrona.
+### Los 3 Agentes del Grafo:
+1. **Extractor (RAG / Segmentador):** Procesa archivos locales (.pdf, .txt, .md). Segmenta en fragmentos indexados en ChromaDB de forma asíncrona.
 2. **Creador (Borrador):** Toma la petición del usuario, evalúa el Perfil (Junior/Senior/Ejecutivo) y el Formato (Flashcards/Quiz/Mapa) inyectando el contexto de RAG para redactar el material en crudo.
 3. **Crítico (Evaluador de Fidelidad/Grounding):** Compara el borrador generado contra el texto original. Asigna un `anclaje_fuente_score`. Si la métrica es menor a **0.85**, obliga al Creador a reescribir. Si falla permanentemente, emite un código HTTP 422.
-4. **Auditor (Hermes 3 Local):** Modelo local gratuito enfocado en escanear el JSON resultante en busca de vulnerabilidades lógicas.
+
+*(Nota: La auditoría local de seguridad originalmente diseñada con Nous Hermes 3 se descartó de la arquitectura final para respetar las limitantes de hardware de OCI Always Free. Las validaciones de seguridad ahora residen nativamente en los esquemas de Pydantic).*
 
 ---
 
-## 2. Alineación del Squad de IA & Datos
-El éxito de este motor es resultado del trabajo colaborativo de los especialistas del Squad de IA:
+## 2. Integraciones Restantes del Squad de IA (Ruta al MVP)
+Para dar el proyecto de IA por completamente finalizado y transicionar con éxito el MVP, es indispensable evaluar e integrar el trabajo colaborativo pendiente de todo el Squad:
 
-* **Fernando F. (Ingeniería de Ingesta):** Lideró la construcción del motor de Extracción y Chunking. Las lógicas de segmentación (800 tokens con overlap de 150) garantizan que el contexto alimentado al VectorStore y a la IA mantenga cohesión semántica, siendo la base del éxito de las respuestas.
-* **Andy M. (QA & Curaduría):** Encargado de la etapa crítica de curaduría de datos en `data/raw/` (VCN OCI, JWT, Microservicios). Andy ejecutará en la Semana 3 la **Auditoría de Fidelidad Fáctica**, validando humanamente que el Agente Crítico no esté dejando pasar alucinaciones con los manuales oficiales.
-* **Marcos H. (Líder IA):** Diseño del Pipeline Multi-Agente, contratos con Backend, suite de resiliencia y telemetría.
-* **Jacqueline R. (Calidad):** Gobernanza del proyecto y aseguramiento de que el flujo cumpla con los estándares exigidos para el Hackathon.
+* **Integración del Pipeline de Datos (Fernando F.):** El núcleo actual requiere la integración final del motor de Ingesta, Extracción y Chunking desarrollado por Fernando. Se debe evaluar rigurosamente en producción que sus lógicas de segmentación (800 tokens con overlap de 150) mantengan la cohesión semántica dentro de ChromaDB, siendo esto la columna vertebral para que el Agente Creador no alucine.
+* **Curaduría y Auditoría Fáctica (Andy M.):** El motor no puede considerarse listo hasta procesar los documentos oficiales. Es necesario que Andy finalice la curaduría de datos en `data/raw/` (VCN OCI, JWT, Microservicios) y ejecute una Auditoría de Fidelidad Humana contra las salidas del Agente Crítico, asegurando la calidad didáctica.
+* **Orquestación y Gobernanza (Marcos H. & Jacqueline R.):** Marcos deberá asegurar la interconexión limpia con Backend de los contratos diseñados, mientras que Jacqueline R. debe velar porque los estándares de calidad del proyecto se cumplan antes del *Code Freeze* del Hackathon.
 
 ---
 
@@ -65,11 +63,10 @@ El éxito de este motor es resultado del trabajo colaborativo de los especialist
 Contamos con una suite E2E en `tests/test_ai_pipeline.py`. El sistema ha pasado **12 de 12 pruebas automatizadas** exitosamente.
 
 ### Métricas Actuales (Benchmark Core):
-* **Cobertura de Pruebas E2E:** 100% de los formatos (Flashcards, Quizzes, Mapas) y perfiles evaluados.
+* **Cobertura de Pruebas E2E:** 100% de los formatos y perfiles evaluados.
 * **Latencia Promedio del Motor de Ingesta:** Reducida de 56.0s a **< 0.05s** (vía Lazy Imports de ChromaDB).
-* **Fidelidad (Grounding):** 100% de eficacia comprobada. El test `T013` inyecta una receta de cocina solicitando DevOps; la IA bloquea y arroja código 422 exitosamente.
-* **Resiliencia (Failover):** 100% operativo. El test `T014` valida la conmutación inmediata de tráfico hacia Llama-3 (Groq) cuando Gemini se satura (HTTP 429).
-* **Seguridad SAST:** 100% de eficacia bloqueando inyecciones XSS y ataques de *Prompt Injection* (Validadores Pydantic).
+* **Fidelidad (Grounding):** 100% de eficacia comprobada. El test `T013` inyecta un documento irrelevante; la IA bloquea y arroja código 422 exitosamente.
+* **Resiliencia (Failover):** 100% operativo. El test `T014` valida la conmutación inmediata hacia Llama-3 (Groq) cuando Gemini se satura (HTTP 429).
 
 ---
 
@@ -88,9 +85,8 @@ Contamos con una suite E2E en `tests/test_ai_pipeline.py`. El sistema ha pasado 
 
 ---
 
-## 5. Próximos Pasos: Afinando el MVP (Semana 2 y 3)
-Aunque el motor de IA está funcional al 100% en aislamiento, faltan **tres piezas de afinación clave** para completar el Minimum Viable Product (MVP):
-
-1. **Integración Real con Backend (Semana 2):** Backend debe retirar su Endpoint Mock y conectar su enrutador directamente a la función asíncrona `ejecutar_pipeline_adaptacion_async`.
-2. **Telemetría en Vivo (Semana 3):** Conectar los eventos `callback_telemetria` emitidos por el motor de IA a la UI de Frontend mediante *Server-Sent Events (SSE)*, para que los usuarios vean la barra de progreso avanzar del 0% al 100%.
-3. **Pruebas de Carga E2E (Semana 3):** Simular a múltiples usuarios subiendo PDFs simultáneamente para verificar que el Failover de Groq y el servidor FastAPI no presenten cuellos de botella por concurrencia de hilos.
+## 5. Próximos Pasos Prioritarios
+1. **Buscar Alternativa a Hermes 3:** Debido a las restricciones de recursos en OCI Always Free, necesitamos investigar, seleccionar y probar una alternativa Cloud ligera (y preferiblemente gratuita, vía API) para que asuma las funciones de auditoría avanzada de seguridad sin sobrecargar el servidor en la nube.
+2. **Integración Real con Backend:** Backend debe retirar su Endpoint Mock y conectar su enrutador directamente a la función asíncrona `ejecutar_pipeline_adaptacion_async`.
+3. **Telemetría en Vivo:** Conectar los eventos `callback_telemetria` emitidos por el motor de IA a la UI de Frontend mediante *Server-Sent Events (SSE)*.
+4. **Pruebas de Carga E2E:** Simular a múltiples usuarios subiendo PDFs simultáneamente para verificar que el Failover de Groq y el servidor FastAPI no presenten cuellos de botella por concurrencia de hilos.
